@@ -1,76 +1,99 @@
 #include <stdio.h>
 #include <math.h>
 
+typedef unsigned char BYTE;
+
+typedef struct {
+	BYTE headers[54];
+	unsigned int file_size_bytes;
+	unsigned int px_offset;
+	int px_width;
+	int px_height;
+	unsigned int bpp;
+	int row_size_bytes;
+	int scan_size_bytes;
+	int num_of_colors;
+	int palette_size_bytes;
+	BYTE *palette;
+	BYTE *pixels;
+} bmp_file;
+
+
+void write_bmp_file(bmp_file bmp, FILE *dest)
+{
+	fwrite(bmp.headers, sizeof(BYTE), 54, dest);
+	fwrite(bmp.palette, sizeof(BYTE), bmp.palette_size_bytes, dest);
+	fwrite(bmp.pixels, sizeof(BYTE), bmp.scan_size_bytes, dest);
+	fflush(dest);
+}
+
+bmp_file * read_bmp_file(FILE *src, bmp_file * bmp)
+{
+	fread(bmp->headers, sizeof(BYTE), 54, src);
+
+	if (0x42 != bmp->headers[0] || 0x4d != bmp->headers[1])
+	{
+		printf("Error");
+		return NULL;
+	}	
+	bmp->file_size_bytes = *(unsigned int *)(bmp->headers + 2);
+	bmp->px_offset = *(unsigned int *)(bmp->headers + 10);
+	bmp->px_width = *(int *)(bmp->headers + 18);
+	bmp->px_height = *(int *)(bmp->headers + 22);
+	bmp->bpp = *(unsigned int *)(bmp->headers + 28);
+	bmp->row_size_bytes = ceil(bmp->bpp * bmp->px_width / 32) * 4;
+	bmp->scan_size_bytes = bmp->row_size_bytes * abs(bmp->px_height);
+	bmp->num_of_colors = *(unsigned int *)(bmp->headers + 50);
+	
+	if (0 == bmp->num_of_colors)
+	{
+		bmp->num_of_colors = (int)pow(2, bmp->bpp);
+	}
+	bmp->palette_size_bytes = bmp->num_of_colors * 4;	
+	
+	bmp->palette = (BYTE *)malloc(bmp->palette_size_bytes);
+	bmp->pixels = (BYTE *)malloc(bmp->scan_size_bytes);
+	fread(bmp->palette, sizeof(BYTE), bmp->palette_size_bytes, src);
+	fread(bmp->pixels, sizeof(BYTE), bmp->scan_size_bytes, src);
+	
+	return bmp;
+}
+
+void free_bmp_file(bmp_file f)
+{
+	free(f.palette);
+	free(f.pixels);
+}
 
 int main()
 {
+	int i, j;
 	FILE *fIn, *fOut;	
+	bmp_file bmp;
+	BYTE *newPixels;
+	
 	fIn = fopen("./img/lena512.bmp", "rb");
-	fOut = fopen("./img/rotated.bmp", "wb+");
+	fOut = fopen("./img/rotated.bmp", "wb+");	
+	bmp = *read_bmp_file(fIn, &bmp);	
 	
 	
-	int i, j,srcRowOffset, colOffset;
-	unsigned char bitmapHeader[14];
-	fread(bitmapHeader, sizeof(unsigned char), 14, fIn);
-	fwrite(bitmapHeader, sizeof(unsigned char), 14, fOut);		
-	printf("Header Field: 0x%X%X\n", bitmapHeader[0], bitmapHeader[1]);
-	printf("File Size in Bytes: %u\n", *(unsigned int *)&bitmapHeader[2]);
-	printf("Starting Address: %u\n", *(unsigned int *)&bitmapHeader[10]);
-	
-	
-	unsigned char dibHeader[40];
-	for (i = 0; i < 40; i++)
-	{
-		dibHeader[i] = fgetc(fIn);
-	}
-	fwrite(dibHeader, 40, 1, fOut);	
-	
-	int imageWidth = *(int *)&dibHeader[4];
-	int imageHeight = *(int *)&dibHeader[8];
-	unsigned int bpp = *(unsigned int *)&dibHeader[14];
-	unsigned int rowSizeBytes = ceil(bpp * imageWidth / 32) * 4;
-	
-	printf("BPP: %u\n", bpp);
-	printf("Width in Pixels: %u (%u bytes per row)\n", imageWidth, rowSizeBytes);
-	printf("Height in Pixels: %u\n", imageHeight);
-	
-	
-	int totalImgSizeInBytes = rowSizeBytes * abs(imageHeight);
-	printf("Size of Pixel Array (bytes): %u\n", totalImgSizeInBytes);
-	
-	unsigned int numOfColors = *(unsigned int *)&dibHeader[36];	
-	
-	if (0 == numOfColors )
-	{
-	  numOfColors = (int)pow(2, bpp);
-	}
-	
-	unsigned int paletteSizeBytes = numOfColors * 4;
-	printf("Palette Size: %u (%u bytes)\n", numOfColors, paletteSizeBytes);
-	unsigned char *colorTable = (unsigned char *)malloc(paletteSizeBytes);
-	fread(colorTable, sizeof(unsigned char), paletteSizeBytes, fIn);
-	fwrite(colorTable, sizeof(unsigned char), paletteSizeBytes, fOut);
-	
-	unsigned char *pixels = (unsigned char *)malloc(totalImgSizeInBytes);	
-	unsigned char *newPixels = (unsigned char *)malloc(totalImgSizeInBytes);
-	fread(pixels, sizeof(unsigned char), totalImgSizeInBytes, fIn);
-	
-	for (i = 0; i < imageHeight; i++)
+	newPixels = (BYTE *)malloc(bmp.scan_size_bytes);
+	for (i = 0; i < bmp.px_height; i++)
 	{		
-		for (j = 0; j < imageWidth; j++)
+		for (j = 0; j < bmp.px_width; j++)
 		{	
-			int destRowOffset =  (imageHeight - 1 - j) * rowSizeBytes;
-			unsigned char *destAddress = newPixels + destRowOffset + (i);
-			unsigned char *srcAddress = pixels + (rowSizeBytes * i) + j;
-			memcpy(destAddress, srcAddress, );
+			int destRowOffset =  (bmp.px_height - 1 - j) * bmp.row_size_bytes;
+			unsigned char *destAddress = newPixels + destRowOffset + i;
+			unsigned char *srcAddress = bmp.pixels + (bmp.row_size_bytes * i) + j;
+			memcpy(destAddress, srcAddress, sizeof(BYTE));
 		}
 	}
 	
-	fwrite(newPixels, sizeof(unsigned char), totalImgSizeInBytes, fOut);
+	bmp.pixels = newPixels;
+	write_bmp_file(bmp, fOut);
+	free_bmp_file(bmp);
+	free(newPixels);
 	fclose(fIn);
 	fclose(fOut);
-	free(pixels);
-	free(newPixels);
-	free(colorTable);
 	return 0;
 }
