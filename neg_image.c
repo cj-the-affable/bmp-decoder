@@ -14,19 +14,14 @@ int main()
 	
 	
 	newPixels = (BYTE *)malloc(bmp.scan_size_bytes);
-	for (i = 0; i < bmp.px_height; i++)
+	for (i = 0; i < bmp.scan_size_bytes; i++)
 	{		
-		for (j = 0; j < bmp.px_width; j++)
-		{	
-			int destRowOffset =  (bmp.px_height - 1 - j) * bmp.row_size_bytes;
-			unsigned char *destAddress = newPixels + destRowOffset + i;
-			unsigned char *srcAddress = bmp.pixels + (bmp.row_size_bytes * i) + j;
-			memcpy(destAddress, srcAddress, sizeof(BYTE));
-		}
+		int curPixel = *(bmp.pixels + i);
+		*(newPixels + i) = bmp.num_of_colors - 1 - curPixel;
 	}	
 	bmp.pixels = newPixels;	
 	
-	fOut = fopen("./img/rotated.bmp", "wb+");	
+	fOut = fopen("./img/negative.bmp", "wb+");	
 	write_bmp_file(bmp, fOut);
 	fclose(fOut);
 	
